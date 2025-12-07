@@ -1,0 +1,9 @@
+{
+  "name": "FEM",
+  "description": "An elegant, soft, and bio-luminescent women's health companion. Features cycle tracking, pregnancy visualization, and AI-powered health guidance.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
