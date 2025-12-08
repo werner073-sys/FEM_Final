@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Moon, MessageCircle, Users, Menu, X, Wind, Trash2, Shield, Sparkles, Flower2 } from 'lucide-react';
+import { Moon, MessageCircle, Users, Menu, X, Wind, Trash2, Shield, Sparkles, Flower2, LogOut } from 'lucide-react';
 import LunarDial from './components/LunarDial';
 import WombView from './components/WombView';
 import TheSage from './components/TheSage';
 import PartnerSync from './components/PartnerSync';
 import SafetyMode from './components/SafetyMode';
+import AuthPage from './components/AuthPage';
 import { AppMode, View, CyclePhase, Symptom } from './types';
 import { getDailyInsight } from './services/geminiService';
+import { useAuth } from './contexts/AuthContext';
+import { getTodaysCycleEntry, saveCycleEntry } from './services/cycleService';
 
 const CYCLE_PHASES: CyclePhase[] = [
   { name: 'Menstruation', color: '#FFB7C5', startDay: 1, endDay: 5 }, // Pastel Pink
@@ -27,22 +30,59 @@ const SYMPTOMS_DB: Symptom[] = [
 ];
 
 const App: React.FC = () => {
+  const { user, isLoading: authLoading, signOut } = useAuth();
   const [mode, setMode] = useState<AppMode>(AppMode.CYCLE);
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
-  const [currentDay, setCurrentDay] = useState(8); 
+  const [currentDay, setCurrentDay] = useState(8);
   const [insight, setInsight] = useState<string>("Listening to the stars...");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
+
   // Symptom Logging State
   const [loggedSymptoms, setLoggedSymptoms] = useState<Symptom[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen bg-lumina-base flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-lumina-rose/20 border-t-lumina-rose rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-lumina-highlight/60 font-serif">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage onAuthSuccess={() => window.location.reload()} />;
+  }
+
+  useEffect(() => {
+    const loadTodayData = async () => {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const entry = await getTodaysCycleEntry(today);
+        if (entry) {
+          setCurrentDay(entry.cycle_day);
+          const symptoms = entry.logged_symptoms
+            .map((id: string) => SYMPTOMS_DB.find(s => s.id === id))
+            .filter(Boolean) as Symptom[];
+          setLoggedSymptoms(symptoms);
+        }
+      } catch (err) {
+        console.error('Error loading today data:', err);
+      }
+    };
+
+    loadTodayData();
+  }, []);
 
   useEffect(() => {
     const fetchInsight = async () => {
-      const symptomNames = loggedSymptoms.length > 0 
-        ? loggedSymptoms.map(s => s.name) 
+      const symptomNames = loggedSymptoms.length > 0
+        ? loggedSymptoms.map(s => s.name)
         : ['No specific symptoms reported'];
-      
+
       setInsight("Consulting the stars...");
       const text = await getDailyInsight(currentDay, mode, symptomNames);
       setInsight(text);
@@ -51,6 +91,26 @@ const App: React.FC = () => {
     const timer = setTimeout(fetchInsight, 800);
     return () => clearTimeout(timer);
   }, [currentDay, mode, loggedSymptoms]);
+
+  useEffect(() => {
+    const saveTodayData = async () => {
+      if (loggedSymptoms.length === 0) return;
+
+      try {
+        setIsSaving(true);
+        const today = new Date().toISOString().split('T')[0];
+        const symptomIds = loggedSymptoms.map(s => s.id);
+        await saveCycleEntry(today, currentDay, symptomIds);
+      } catch (err) {
+        console.error('Error saving data:', err);
+      } finally {
+        setIsSaving(false);
+      }
+    };
+
+    const timer = setTimeout(saveTodayData, 1000);
+    return () => clearTimeout(timer);
+  }, [loggedSymptoms, currentDay]);
 
   const toggleMode = () => {
     setMode(prev => prev === AppMode.CYCLE ? AppMode.PREGNANCY : AppMode.CYCLE);
@@ -290,15 +350,22 @@ const App: React.FC = () => {
             </div>
             
             <div className="mt-auto pt-8 border-t border-lumina-soft/10">
-                <div className="flex items-center gap-4 group cursor-pointer p-2 rounded-xl hover:bg-white/40 transition-colors">
+                <div className="flex items-center gap-4 p-2 rounded-xl mb-4">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-lumina-rose to-lumina-lavender p-[2px]">
                         <img src="https://picsum.photos/100" alt="User" className="w-full h-full rounded-full border-2 border-white" />
                     </div>
-                    <div>
-                        <p className="text-sm font-serif text-lumina-highlight group-hover:text-lumina-rose transition-colors">Elena R.</p>
-                        <p className="text-xs text-lumina-highlight/40 group-hover:text-lumina-highlight/60 transition-colors">Premium Soul</p>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-serif text-lumina-highlight truncate">{user.email}</p>
+                        <p className="text-xs text-lumina-highlight/40 truncate">Member</p>
                     </div>
                 </div>
+                <button
+                    onClick={() => signOut()}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-lumina-highlight/60 hover:text-lumina-rose hover:bg-white/40 rounded-xl transition-colors text-sm"
+                >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign Out</span>
+                </button>
             </div>
         </nav>
 
